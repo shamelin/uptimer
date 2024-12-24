@@ -1,0 +1,25 @@
+# =====================================
+# HOSTS
+# =====================================
+
+# To define a host, you must create a new entry under the [hosts] section.
+# You can also define headers for a host by creating a new entry under the 
+# [hosts.<host>] section.
+
+# Note that the host key is required for each host, but the other keys are optional.
+
+# The default values for interval and headers will be used if they are not defined.
+# You can define these values for all hosts using the environment variables INTERVAL
+# and TIMEOUT, or the command line flags --interval and --timeout.
+
+# Hosts configured here will take precedence over the environment variables and
+# command line flags.
+
+# [hosts.example]
+# host = "https://example.com"
+# interval = 10
+#
+# [hosts.example.headers]
+# Authorization = "Bearer 123"
+# X-Api-Key = "456"
+# ...
