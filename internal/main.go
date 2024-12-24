@@ -24,8 +24,8 @@ func readConfiguration(logger *log.Entry) error {
 	viper.SetConfigName("config.toml")
 	viper.SetConfigType("toml")
 	viper.AddConfigPath(".")
-	viper.AddConfigPath("$HOME/.uptime-seeker")
-	viper.AddConfigPath("/uptime-seeker")
+	viper.AddConfigPath("$HOME/.uptimer")
+	viper.AddConfigPath("/app")
 
 	if err := viper.ReadInConfig(); err != nil {
 		return err
@@ -48,7 +48,7 @@ func Application(ctx *cli.Context) error {
 	}
 	log.SetLevel(level)
 
-	logger.Info("Starting Uptime Seeker")
+	logger.Info("Starting Uptimer")
 
 	// read the configuration but don't fail if it's not present
 	if err := readConfiguration(logger); err != nil {

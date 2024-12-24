@@ -1,4 +1,4 @@
-DOCKER_IMAGE_NAME ?= uptime-seeker
+DOCKER_IMAGE_NAME ?= uptimer
 
 build:
 	docker build -t $(DOCKER_IMAGE_NAME) .

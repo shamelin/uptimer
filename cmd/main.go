@@ -3,7 +3,7 @@ package main
 import (
 	"github.com/urfave/cli/v2"
 	"os"
-	"uptime-seeker/internal"
+	"uptimer/internal"
 
 	log "github.com/sirupsen/logrus"
 )
@@ -14,7 +14,7 @@ var logger = log.WithFields(log.Fields{
 
 func main() {
 	app := &cli.App{
-		Name:    "Uptime Seeker",
+		Name:    "Uptimer",
 		Usage:   "A flexible Prometheus-compatible uptime checker for your services.",
 		Version: "1.0.0",
 		Authors: []*cli.Author{
