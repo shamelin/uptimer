@@ -1,4 +1,4 @@
-module uptime-seeker
+module uptimer
 
 go 1.23.3
 

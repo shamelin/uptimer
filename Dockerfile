@@ -7,18 +7,18 @@ RUN go mod download
 
 COPY . .
 
-RUN go build -o uptime-seeker ./cmd/main.go
+RUN go build -o uptimer ./cmd/main.go
 
 FROM alpine:latest
 
-ENV TZ=America/New_York APP_NAME=uptime-seeker
+ENV TZ=America/New_York APP_NAME=uptimer
 
 RUN apk add --no-cache ca-certificates
 
 WORKDIR /app
 
-COPY --from=builder /app/uptime-seeker .
+COPY --from=builder /app/uptimer .
 
 EXPOSE 8080
 
-ENTRYPOINT ["./uptime-seeker"]
+ENTRYPOINT ["./uptimer"]

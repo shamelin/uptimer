@@ -1,4 +1,4 @@
-# uptime-seeker
+# uptimer
 A flexible Prometheus-compatible uptime checker for your services.
 
 ## Features
@@ -8,7 +8,7 @@ A flexible Prometheus-compatible uptime checker for your services.
 
 ## Metrics exposed
 - `uptime_up`: Whether the remote service is up or not.
-- `uptime_latency`: The latency between the uptime-seeker and the remote service.
+- `uptime_latency`: The latency between the uptimer and the remote service.
 - `uptime_status_code`: The status code of the last request to the remote service.
 
 ## Configuration
@@ -30,8 +30,8 @@ An example configuration file is provided in `config.example.toml`.
 
 The configuration file will be searched for in the following locations:
 - The same directory as the binary.
-- `/uptime-seeker/config.toml`.
-- `$HOME/.uptime-seeker/config.toml`.
+- `/app/config.toml`.
+- `$HOME/.uptimer/config.toml`.
 
 ## Usage
 1. Create a `config.toml` file with your hosts and check intervals using the example file (`config.example.toml`) as a template.
@@ -42,20 +42,20 @@ The configuration file will be searched for in the following locations:
 An image is automatically built and pushed to GitHub Container Registry on every push to the `main` branch.
 You can pull the image using the following command:
 ```sh
-docker pull ghcr.io/shamelin/uptime-seeker:latest
+docker pull ghcr.io/shamelin/uptimer:latest
 ```
 
 You can run the image using the following command:
 ```sh
-docker run -d -p 8080:8080 -v /path/to/config.toml:/uptime-seeker/config.toml ghcr.io/shamelin/uptime-seeker:latest
+docker run -d -p 8080:8080 -v /path/to/config.toml:/uptimer/config.toml ghcr.io/shamelin/uptimer:latest
 ```
 
 Or, you can use the provided `docker-compose.yml` file:
 ```sh
 services:
-  uptime-seeker:
-    container_name: uptime-seeker
-    image: ghcr.io/shamelin/uptime-seeker:latest
+  uptimer:
+    container_name: uptimer
+    image: ghcr.io/shamelin/uptimer:latest
     ports:
       - "8080:8080"
     environment:
@@ -64,5 +64,5 @@ services:
       - INTERVAL=5s
       - TIMEOUT=5s
     volumes:
-      - /path/to/config.toml:/uptime-seeker/config.toml
+      - /path/to/config.toml:/app/config.toml
 ```

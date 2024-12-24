@@ -76,7 +76,7 @@ func TestParseHostsFromConfigWithSingleHostWithParameters(t *testing.T) {
 	viper.Set("hosts.host1.interval", 10)
 
 	ctx := cli.NewContext(&cli.App{
-		Name:    "Uptime Seeker",
+		Name:    "Uptimer",
 		Version: "1.0.0",
 	}, flagSet, nil)
 
@@ -87,7 +87,7 @@ func TestParseHostsFromConfigWithSingleHostWithParameters(t *testing.T) {
 		Timeout:  10,
 		Interval: 10,
 		Headers: map[string]string{
-			"User-Agent": "Uptime Seeker/1.0.0",
+			"User-Agent": "Uptimer/1.0.0",
 		},
 	})
 }
