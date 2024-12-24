@@ -121,7 +121,8 @@ func TestParseHostsFromConfigWithMultipleHosts(t *testing.T) {
 
 	hosts := parseHostsFromCongFile(logger, ctx)
 	assert.Len(t, hosts, 2)
-	assert.Equal(t, hosts[0], Host{
+	// the array is not ordered
+	assert.Contains(t, hosts, Host{
 		Host:     "http://example.com",
 		Timeout:  10,
 		Interval: 10,
@@ -129,7 +130,7 @@ func TestParseHostsFromConfigWithMultipleHosts(t *testing.T) {
 			"User-Agent": "/",
 		},
 	})
-	assert.Equal(t, hosts[1], Host{
+	assert.Contains(t, hosts, Host{
 		Host:     "http://example.org",
 		Timeout:  5,
 		Interval: 5,
