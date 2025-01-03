@@ -3,6 +3,7 @@ package internal
 import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
+	"github.com/stretchr/testify/assert"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -13,12 +14,43 @@ import (
 
 func setupSeeker(server *httptest.Server) *SeekerImpl {
 	registerer := prometheus.NewRegistry()
-	return NewSeeker(
+	seeker, err := NewSeeker(
 		Host{
 			Host: server.URL,
 		},
 		registerer,
 	)
+
+	if err != nil {
+		panic(err)
+	}
+
+	return seeker
+}
+
+func TestSeekerPersistCookieJar(t *testing.T) {
+	var visited bool
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !visited {
+			visited = true
+			http.SetCookie(w, &http.Cookie{
+				Name: "test",
+			})
+		} else {
+			assert.NotNil(t, r.Header.Get("Cookie"), "Expected cookie to be set")
+		}
+
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	seeker := setupSeeker(server)
+	// First request to set the cookie
+	seeker.check()
+
+	// Second request to check if the cookie is persisted
+	seeker.check()
 }
 
 func TestSeekerImplCheckUptimeWithSuccessExpectUp(t *testing.T) {

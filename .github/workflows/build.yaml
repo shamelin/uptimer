@@ -57,7 +57,13 @@ jobs:
         id: build
         run: |
           make build DOCKER_IMAGE_NAME=ghcr.io/${{ github.repository }}:${{steps.version.outputs.VERSION}}
-          echo "DOCKER_IMAGE_NAME=ghcr.io/${{ github.repository }}:${{steps.version.outputs.VERSION}}" >> $GITHUB_OUTPUT
+          
+          # If we're in master, also tag as latest
+          if [ "${GITHUB_HEAD_REF}" == "main" ]; then
+            docker tag ghcr.io/${{ github.repository }}:${{steps.version.outputs.VERSION}} ghcr.io/${{ github.repository }}:latest
+          fi
+          
+          echo "DOCKER_IMAGE_NAME=ghcr.io/${{ github.repository }}" >> $GITHUB_OUTPUT
 
       - name: "Login to GitHub Container Registry"
         uses: docker/login-action@v1
@@ -77,4 +83,9 @@ jobs:
 
       - name: "Publish Docker image"
         run: |
-          docker push "${{ steps.build.outputs.DOCKER_IMAGE_NAME }}"
+          docker push "${{ steps.build.outputs.DOCKER_IMAGE_NAME }}:${{steps.version.outputs.VERSION}}"
+          
+          # If we're in master, also push as latest
+          if [ "${GITHUB_HEAD_REF}" == "main" ]; then
+            docker push "${{ steps.build.outputs.DOCKER_IMAGE_NAME }}:latest"
+          fi
