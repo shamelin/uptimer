@@ -1,5 +1,19 @@
 # uptimer
-A flexible Prometheus-compatible uptime checker for your services.
+A flexible Prometheus-compatible uptime checker for your services. Useful to know if your services are working, and how long they take to respond.
+
+[![License](https://img.shields.io/github/license/shamelin/uptimer)](./README.md)
+[![GitHub release (latest by date)](https://img.shields.io/github/v/release/shamelin/uptimer)](https://github.com/shamelin/uptimer/releases)
+[![GitHub go.mod Go version](https://img.shields.io/github/go-mod/go-version/shamelin/uptimer)](./go.mod)
+[![Go Report Card](https://goreportcard.com/badge/github.com/shamelin/uptimer)](https://goreportcard.com/report/github.com/shamelin/uptimer)
+[![GitHub Workflow Status](https://img.shields.io/github/actions/workflow/status/shamelin/uptimer/build.yaml?branch=main)](https://github.com/shamelin/uptimer/actions/workflows/build.yaml)
+
+## Demonstration
+Uptimer can be used to monitor the uptime of your services directly from Grafana. You can spin up the service and point it to your other services, then create a Grafana dashboard to monitor the uptime of your services.
+
+![Data display](./assets/top-components.png)
+![Latency demonstration](./assets/latency-graph.png)
+
+The dashboard is availle in the `grafana/dashboard.yaml` file. Be sure to edit the datasource `uid` to match yours.
 
 ## Features
 - **Prometheus-compatible**: Expose metrics in Prometheus format.

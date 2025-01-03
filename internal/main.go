@@ -70,13 +70,18 @@ func Application(ctx *cli.Context) error {
 		collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}),
 	)
 	for _, host := range hosts {
-		seeker := NewSeeker(
+		seeker, err := NewSeeker(
 			host,
 			prometheus.WrapRegistererWith(
 				prometheus.Labels{"host": host.Host},
 				registry,
 			),
 		)
+		if err != nil {
+			logger.WithError(err).Error("Failed to create seeker.")
+			return nil
+		}
+
 		go seeker.CheckUptime()
 
 		logger.Infof("Started checking [%s]", host.Host)

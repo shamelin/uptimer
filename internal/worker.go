@@ -6,6 +6,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/sirupsen/logrus"
 	"net/http"
+	"net/http/cookiejar"
 	"os"
 	"os/signal"
 	"syscall"
@@ -32,7 +33,7 @@ type SeekerImpl struct {
 }
 
 // NewSeeker creates a new SeekerImpl instance.
-func NewSeeker(host Host, registerer prometheus.Registerer) *SeekerImpl {
+func NewSeeker(host Host, registerer prometheus.Registerer) (*SeekerImpl, error) {
 	logger := logrus.WithFields(logrus.Fields{
 		"component": "seeker",
 	})
@@ -52,12 +53,20 @@ func NewSeeker(host Host, registerer prometheus.Registerer) *SeekerImpl {
 		Help: "The status code of the last request.",
 	})
 
+	// create a cookie jar to store cookies
+	jar, err := cookiejar.New(nil)
+	if err != nil {
+		logger.Fatalf("Failed to create cookie jar: %v", err)
+		return nil, err
+	}
+
 	httpClient := &http.Client{
 		Timeout: time.Duration(host.Timeout) * time.Second,
 		Transport: &headerRoundTripper{
 			headers: host.Headers,
 			rt:      http.DefaultTransport,
 		},
+		Jar: jar,
 	}
 
 	return &SeekerImpl{
@@ -69,7 +78,7 @@ func NewSeeker(host Host, registerer prometheus.Registerer) *SeekerImpl {
 		latency:      latency,
 		statusCode:   statusCode,
 		previouslyUp: true, // we assume the host is up when we start, to show an error if it's down
-	}
+	}, nil
 }
 
 // CheckUptime starts the uptime checking process. It will run indefinitely until the context is cancelled.
