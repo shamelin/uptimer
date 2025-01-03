@@ -58,8 +58,8 @@ jobs:
         run: |
           make build DOCKER_IMAGE_NAME=ghcr.io/${{ github.repository }}:${{steps.version.outputs.VERSION}}
           
-          # If we're in master, also tag as latest
-          if [ "${GITHUB_HEAD_REF}" == "main" ]; then
+          # If we're in main, also tag as latest
+          if [ -z "${GITHUB_HEAD_REF}" ] || [ "${GITHUB_HEAD_REF}" == "main" ]; then
             docker tag ghcr.io/${{ github.repository }}:${{steps.version.outputs.VERSION}} ghcr.io/${{ github.repository }}:latest
           fi
           
@@ -85,7 +85,7 @@ jobs:
         run: |
           docker push "${{ steps.build.outputs.DOCKER_IMAGE_NAME }}:${{steps.version.outputs.VERSION}}"
           
-          # If we're in master, also push as latest
-          if [ "${GITHUB_HEAD_REF}" == "main" ]; then
+          # If we're in main, also push as latest
+          if [ -z "${GITHUB_HEAD_REF}" ] || [ "${GITHUB_HEAD_REF}" == "main" ]; then
             docker push "${{ steps.build.outputs.DOCKER_IMAGE_NAME }}:latest"
           fi
