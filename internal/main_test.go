@@ -7,7 +7,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/urfave/cli/v2"
 	"testing"
-	"uptimer/internal/seeking"
+	"uptimer/internal/seeking/dto"
 )
 
 var logger = log.WithFields(log.Fields{
@@ -83,7 +83,7 @@ func TestParseHostsFromConfigWithSingleHostWithParameters(t *testing.T) {
 
 	hosts := parseHostsFromCongFile(logger, ctx)
 	assert.Len(t, hosts, 1)
-	assert.Equal(t, hosts[0], seeking.Host{
+	assert.Equal(t, hosts[0], dto.Host{
 		Host:     "http://example.com",
 		Timeout:  10,
 		Interval: 10,
@@ -101,7 +101,7 @@ func TestParseHostsFromConfigWithSingleHostWithoutParameters(t *testing.T) {
 
 	hosts := parseHostsFromCongFile(logger, ctx)
 	assert.Len(t, hosts, 1)
-	assert.Equal(t, hosts[0], seeking.Host{
+	assert.Equal(t, hosts[0], dto.Host{
 		Host:     "http://example.com",
 		Timeout:  5,
 		Interval: 5,
@@ -123,7 +123,7 @@ func TestParseHostsFromConfigWithMultipleHosts(t *testing.T) {
 	hosts := parseHostsFromCongFile(logger, ctx)
 	assert.Len(t, hosts, 2)
 	// the array is not ordered
-	assert.Contains(t, hosts, seeking.Host{
+	assert.Contains(t, hosts, dto.Host{
 		Host:     "http://example.com",
 		Timeout:  10,
 		Interval: 10,
@@ -131,7 +131,7 @@ func TestParseHostsFromConfigWithMultipleHosts(t *testing.T) {
 			"User-Agent": "/",
 		},
 	})
-	assert.Contains(t, hosts, seeking.Host{
+	assert.Contains(t, hosts, dto.Host{
 		Host:     "http://example.org",
 		Timeout:  5,
 		Interval: 5,
@@ -162,7 +162,7 @@ func TestParseHostsFromConfigOverridesUserAgent(t *testing.T) {
 
 	hosts := parseHostsFromCongFile(logger, ctx)
 	assert.Len(t, hosts, 1)
-	assert.Equal(t, hosts[0], seeking.Host{
+	assert.Equal(t, hosts[0], dto.Host{
 		Host:     "http://example.com",
 		Timeout:  5,
 		Interval: 5,

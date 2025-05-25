@@ -1,6 +1,9 @@
-package seeking
+package dto
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+)
 
 type Severity int64
 
@@ -20,15 +23,15 @@ func (sev Severity) String() string {
 
 // ParseSeverity parses a string and returns the corresponding Severity.
 func ParseSeverity(sev string) (Severity, error) {
-	switch sev {
-	case "Critical":
+	switch strings.ToLower(sev) {
+	case "critical":
 		return Critical, nil
-	case "Major":
+	case "major":
 		return Major, nil
-	case "Minor":
+	case "minor":
 		return Minor, nil
 	default:
-		return -1, fmt.Errorf("invalid severity: %s", sev)
+		return -1, fmt.Errorf("invalid severity: [%s]", sev)
 	}
 }
 

@@ -3,7 +3,7 @@ package hooks
 import (
 	log "github.com/sirupsen/logrus"
 	"time"
-	"uptimer/internal/seeking"
+	"uptimer/internal/seeking/dto"
 )
 
 var logger = log.WithFields(log.Fields{
@@ -11,7 +11,8 @@ var logger = log.WithFields(log.Fields{
 })
 
 type SeekResult struct {
-	Host         seeking.Host
+	Host         dto.Host
+	Online       bool
 	StatusCode   int
 	ResponseTime time.Duration
 }

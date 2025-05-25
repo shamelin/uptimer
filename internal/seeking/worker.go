@@ -11,6 +11,7 @@ import (
 	"os/signal"
 	"syscall"
 	"time"
+	"uptimer/internal/seeking/dto"
 	"uptimer/internal/seeking/hooks"
 )
 
@@ -26,7 +27,7 @@ type SeekerImpl struct {
 	logger       *logrus.Entry
 	hooks        map[string]hooks.HookHandler
 	httpClient   *http.Client
-	host         Host
+	host         dto.Host
 	up           prometheus.Gauge
 	latency      prometheus.Gauge
 	statusCode   prometheus.Gauge
@@ -34,7 +35,7 @@ type SeekerImpl struct {
 }
 
 // NewSeeker creates a new SeekerImpl instance.
-func NewSeeker(host Host, hooks map[string]hooks.HookHandler, registerer prometheus.Registerer) (*SeekerImpl, error) {
+func NewSeeker(host dto.Host, hooks map[string]hooks.HookHandler, registerer prometheus.Registerer) (*SeekerImpl, error) {
 	logger := logrus.WithFields(logrus.Fields{
 		"component": "seeker",
 	})
@@ -120,29 +121,35 @@ func (s *SeekerImpl) check() {
 	host := s.host.Host
 	s.logger.Debugf("Checking [%s]", host)
 	res, err := s.httpClient.Get(host)
+	seekResult := hooks.SeekResult{
+		Host:         s.host,
+		ResponseTime: time.Since(start),
+	}
 	if err != nil {
+		seekResult.Online = false
+
 		s.logger.Debugf("Got error [%v] for [%s]. Counting as down.", err, host)
 		s.up.Set(0)
 		if s.previouslyUp {
 			s.logger.Warnf("Host [%s] is down.", host)
 		}
 		s.previouslyUp = false
-
-		return
+	} else {
+		seekResult.Online = true
+		seekResult.StatusCode = res.StatusCode
 	}
 
 	// call hooks
-	seekResult := hooks.SeekResult{
-		Host:         s.host,
-		StatusCode:   res.StatusCode,
-		ResponseTime: time.Since(start),
-	}
 	for _, hook := range s.host.Hooks {
 		if handler, ok := s.hooks[hook]; ok {
 			if err := handler.Handle(seekResult); err != nil {
 				s.logger.Errorf("Failed to handle hook [%s]: %v", hook, err)
 			}
 		}
+	}
+
+	if !seekResult.Online {
+		return
 	}
 
 	// if the status code is not in the 2xx range, we consider the host as down

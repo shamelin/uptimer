@@ -9,12 +9,13 @@ import (
 	"net/http/httptest"
 	"testing"
 	"time"
+	"uptimer/internal/seeking/dto"
 )
 
 func setupSeeker(server *httptest.Server) *SeekerImpl {
 	registerer := prometheus.NewRegistry()
 	seeker, err := NewSeeker(
-		Host{
+		dto.Host{
 			Host: server.URL,
 		},
 		registerer,

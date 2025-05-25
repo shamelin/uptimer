@@ -7,7 +7,9 @@ import (
 	"github.com/spf13/viper"
 	"github.com/urfave/cli/v2"
 	"net/url"
+	"os"
 	"uptimer/internal/seeking"
+	"uptimer/internal/seeking/dto"
 	"uptimer/internal/seeking/hooks"
 )
 
@@ -65,11 +67,17 @@ func Application(ctx *cli.Context) error {
 		collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}),
 	)
 
-	hooks := loadHooks()
+	// Get all the needed hooks for the system
+	neededHooks := make([]string, 0)
+	for _, host := range hosts {
+		neededHooks = append(neededHooks, host.Hooks...)
+	}
+
+	availableHooks := loadHooks(neededHooks)
 	for _, host := range hosts {
 		seeker, err := seeking.NewSeeker(
 			host,
-			hooks,
+			availableHooks,
 			prometheus.WrapRegistererWith(
 				prometheus.Labels{"host": host.Host},
 				registry,
@@ -92,8 +100,8 @@ func Application(ctx *cli.Context) error {
 }
 
 // parseHostsFromEnvVar parses the hosts string and returns a slice of valid hosts.
-func parseHostsFromEnvVar(logger *log.Entry, ctx *cli.Context) []seeking.Host {
-	var output []seeking.Host
+func parseHostsFromEnvVar(logger *log.Entry, ctx *cli.Context) []dto.Host {
+	var output []dto.Host
 
 	entries := ctx.StringSlice("hosts")
 	if len(entries) == 0 || entries[0] == "" {
@@ -109,7 +117,7 @@ func parseHostsFromEnvVar(logger *log.Entry, ctx *cli.Context) []seeking.Host {
 			continue
 		}
 
-		output = append(output, seeking.Host{
+		output = append(output, dto.Host{
 			Host:     u.String(),
 			Timeout:  ctx.Int("timeout"),
 			Interval: ctx.Int("interval"),
@@ -127,8 +135,8 @@ func parseHostsFromEnvVar(logger *log.Entry, ctx *cli.Context) []seeking.Host {
 // parseHostsFromCongFile parses the hosts from the configuration file.
 // A host in the configuration file may not have all its fields
 // filled, in which case the environment variable will be used.
-func parseHostsFromCongFile(logger *log.Entry, ctx *cli.Context) []seeking.Host {
-	var output []seeking.Host
+func parseHostsFromCongFile(logger *log.Entry, ctx *cli.Context) []dto.Host {
+	var output []dto.Host
 
 	hosts := viper.GetStringMapStringSlice("hosts")
 	for key := range hosts {
@@ -154,13 +162,13 @@ func parseHostsFromCongFile(logger *log.Entry, ctx *cli.Context) []seeking.Host 
 			headers["User-Agent"] = ctx.App.Name + "/" + ctx.App.Version
 		}
 
-		severity, err := seeking.ParseSeverity(viper.GetString(prefix + ".severity"))
+		severity, err := dto.ParseSeverity(viper.GetString(prefix + ".severity"))
 		if err != nil {
-			logger.WithError(err).Errorf("Failed to parse severity [%s] for host [%s]. Defaulting to Minor", viper.GetString(prefix+".severity"), hostname)
-			severity = seeking.Minor
+			logger.WithError(err).Warnf("Failed to parse severity [%s] for host [%s]. Defaulting to Minor", viper.GetString(prefix+".severity"), hostname)
+			severity = dto.Minor
 		}
 
-		output = append(output, seeking.Host{
+		output = append(output, dto.Host{
 			Host:              u.String(),
 			Timeout:           viper.GetInt(prefix + ".timeout"),
 			Interval:          viper.GetInt(prefix + ".interval"),
@@ -179,8 +187,8 @@ func parseHostsFromCongFile(logger *log.Entry, ctx *cli.Context) []seeking.Host 
 
 // mergeHosts merges the hosts from the environment variables and the configuration file.
 // It will keep the configuration file hosts in priority.
-func mergeHosts(envHosts, configHosts []seeking.Host) []seeking.Host {
-	hosts := make(map[string]seeking.Host)
+func mergeHosts(envHosts, configHosts []dto.Host) []dto.Host {
+	hosts := make(map[string]dto.Host)
 	for _, host := range envHosts {
 		hosts[host.Host] = host
 	}
@@ -188,7 +196,7 @@ func mergeHosts(envHosts, configHosts []seeking.Host) []seeking.Host {
 		hosts[host.Host] = host
 	}
 
-	var output []seeking.Host
+	var output []dto.Host
 	for _, host := range hosts {
 		output = append(output, host)
 	}
@@ -196,17 +204,26 @@ func mergeHosts(envHosts, configHosts []seeking.Host) []seeking.Host {
 	return output
 }
 
-func loadHooks() map[string]hooks.HookHandler {
-	// CState
-	repo := hooks.Repository{
-		Owner:       viper.GetString("cstate.repo.owner"),
-		Name:        viper.GetString("cstate.repo.name"),
-		Branch:      viper.GetString("cstate.repo.branch"),
-		CommitName:  viper.GetString("cstate.repo.commit.name"),
-		CommitEmail: viper.GetString("cstate.repo.commit.email"),
+func loadHooks(targetHooks []string) map[string]hooks.HookHandler {
+	output := make(map[string]hooks.HookHandler)
+
+	for _, targetHook := range targetHooks {
+		switch targetHook {
+		case "cstate":
+			repo := hooks.Repository{
+				Owner:       viper.GetString("cstate.repo.owner"),
+				Name:        viper.GetString("cstate.repo.name"),
+				Branch:      viper.GetString("cstate.repo.branch"),
+				CommitName:  viper.GetString("cstate.repo.commit.name"),
+				CommitEmail: viper.GetString("cstate.repo.commit.email"),
+			}
+
+			output["cstate"] = hooks.NewCStateHook(os.Getenv("GITHUB_TOKEN"), repo)
+		default:
+			log.Warnf("Unknown hook [%s] requested. Skipping.", targetHook)
+		}
 	}
 
-	return map[string]hooks.HookHandler{
-		"cstate": hooks.NewCStateHook(viper.GetString("GITHUB_TOKEN"), repo),
-	}
+	log.Infof("Loaded [%d] hooks", len(output))
+	return output
 }

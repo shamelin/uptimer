@@ -3,32 +3,33 @@ package hooks
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"github.com/google/go-github/v72/github"
 	"gopkg.in/yaml.v3"
 	"strings"
 	"time"
-	"uptimer/internal/seeking"
+	"uptimer/internal/seeking/dto"
 )
 
 type HistoryType string
 
 const (
-	Investigating HistoryType = "investigating"
-	Monitoring    HistoryType = "monitoring"
-	Resolved      HistoryType = "resolved"
+	Investigating HistoryType = "Investigating"
+	Monitoring    HistoryType = "Monitoring"
+	Resolved      HistoryType = "Resolved"
 )
 
 var commitMessage = "uptimer: update status"
 
 type OutageYamlFile struct {
-	section       string   `yaml:"section"`
-	title         string   `yaml:"title"`
-	date          string   `yaml:"date"`
-	resolved      bool     `yaml:"resolved"`
-	informational bool     `yaml:"informational"`
-	resolvedWhen  string   `yaml:"resolvedWhen"`
-	affected      []string `yaml:"affected"`
-	severity      string   `yaml:"severity"`
+	Section       string   `yaml:"section"`
+	Title         string   `yaml:"title"`
+	Date          string   `yaml:"date"`
+	Resolved      bool     `yaml:"resolved"`
+	Informational bool     `yaml:"informational"`
+	ResolvedWhen  string   `yaml:"resolvedWhen"`
+	Affected      []string `yaml:"affected"`
+	Severity      string   `yaml:"severity"`
 }
 
 type OutageHistoryFile struct {
@@ -67,8 +68,7 @@ func NewCStateHook(githubToken string, repo Repository) *CStateHook {
 	// Load the state from the file if it exists
 	err = cstateHook.loadState()
 	if err != nil {
-		logger.Errorf("Failed to load state: %v", err)
-		return nil
+		logger.Errorf("Failed to load state, will start from scratch: [%v]", err)
 	}
 
 	return cstateHook
@@ -76,25 +76,54 @@ func NewCStateHook(githubToken string, repo Repository) *CStateHook {
 
 // Ensures an outage is created for the given list of application groups.
 func (h *CStateHook) ensureOutages(appGroups []string) {
+	// Get the list of missing application groups
+	missingAppGroups := make([]string, 0)
 	for _, appGroup := range appGroups {
+		found := false
+		for _, outage := range h.outages {
+			if outage.AppGroup == appGroup {
+				found = true
+				break
+			}
+		}
+		if !found {
+			missingAppGroups = append(missingAppGroups, appGroup)
+		}
+	}
+
+	currentDate := time.Now().UTC()
+	for index := range missingAppGroups {
 		outage := Outage{
-			AppGroup:    appGroup,
-			Hosts:       make([]OutageHost, 0),
-			YamlContent: OutageYamlFile{section: appGroup},
+			Filename: "content/issues/" + currentDate.Format("2006-01-02-150405") + "-" + missingAppGroups[index] + ".md",
+			AppGroup: missingAppGroups[index],
+			Hosts:    make([]OutageHost, 0),
+			YamlContent: OutageYamlFile{
+				Section:  "issue",
+				Title:    "Outage for " + missingAppGroups[index],
+				Affected: []string{missingAppGroups[index]},
+				Date:     currentDate.Format("2006-01-02 15:04:05"),
+			},
+			History: make([]OutageHistoryFile, 0),
 		}
 		h.outages = append(h.outages, outage)
 	}
 }
 
 func (h *CStateHook) Handle(result SeekResult) error {
-	//
+	if result.Host.AppGroup == nil {
+		return nil
+	}
 
-	return nil
+	if result.Online {
+		return h.handleOnline(result)
+	} else {
+		return h.handleOffline(result)
+	}
 }
 
 // handleOnline is called when the host is online. It updates the online status and
 // dumps the state to the file if the status has changed.
-func (h *CStateHook) handleOnline(result SeekResult) {
+func (h *CStateHook) handleOnline(result SeekResult) error {
 	for _, outage := range h.outages {
 		outage.RemoveHost(OutageHost{
 			Host:        result.Host.Host,
@@ -103,12 +132,12 @@ func (h *CStateHook) handleOnline(result SeekResult) {
 		})
 	}
 
-	h.reprocessOutages()
+	return h.reprocessOutages()
 }
 
 // handleOffline is called when the host is offline. It updates the online status and
 // dumps the state to the file if the status has changed.
-func (h *CStateHook) handleOffline(result SeekResult) {
+func (h *CStateHook) handleOffline(result SeekResult) error {
 	outageHost := OutageHost{
 		Host:        result.Host.Host,
 		Description: result.Host.OutageDescription,
@@ -116,24 +145,25 @@ func (h *CStateHook) handleOffline(result SeekResult) {
 	}
 
 	h.ensureOutages(result.Host.AppGroup)
-	for _, outage := range h.outages {
+	for index := range h.outages {
+		outage := &h.outages[index]
 		// Check if the outage app group matches one of the application groups
-		if outage.RelatedToOutage(result.Host.AppGroup) {
+		if outage.RelatedToOutage(result.Host.AppGroup) && !outage.HostExists(outageHost) {
 			outage.AddHost(outageHost)
 		}
 	}
 
-	h.reprocessOutages()
+	return h.reprocessOutages()
 }
 
 // Reprocesses the active outages and resolves them if all hosts are online.
-func (h *CStateHook) reprocessOutages() {
+func (h *CStateHook) reprocessOutages() error {
 	resolvedOutages := make([]int, 0)
-	for index, outage := range h.outages {
-		backOnline := len(outage.Hosts) == 0
+	for index := range h.outages {
+		backOnline := len(h.outages[index].Hosts) == 0
 
 		// Update the outage status in the repository
-		h.updateOutageFile(outage)
+		h.updateOutageFile(h.outages[index])
 
 		if backOnline {
 			resolvedOutages = append(resolvedOutages, index)
@@ -150,7 +180,10 @@ func (h *CStateHook) reprocessOutages() {
 	err := h.dumpState()
 	if err != nil {
 		logger.Errorf("Failed to dump state: %v", err)
+		return err
 	}
+
+	return nil
 }
 
 // updateOutageFile updates the file of the outage and sets it as resolved.
@@ -158,7 +191,7 @@ func (h *CStateHook) updateOutageFile(outage Outage) {
 	outageFile := outage.FormatOutageFile()
 
 	// Update the file in the repository
-	err := h.commit(outage.YamlContent.section, outageFile)
+	err := h.commit(outage.Filename, outageFile)
 	if err != nil {
 		logger.Errorf("Failed to commit file: [%v]", err)
 		return
@@ -172,8 +205,8 @@ func (h *CStateHook) dumpState() error {
 	// Output each value in the "online" variable with a mapping key=value.
 	fileContent := new(strings.Builder)
 
-	for outage := range h.outages {
-		encodedOutage, err := json.Marshal(outage)
+	for index := range h.outages {
+		encodedOutage, err := json.Marshal(h.outages[index])
 		if err != nil {
 			logger.Errorf("Failed to marshal outage: %v", err)
 			return err
@@ -213,13 +246,13 @@ func (h *CStateHook) loadState() error {
 
 	lines := strings.Split(content, "\n")
 	outages := make([]Outage, 0, len(lines))
-	for _, line := range lines {
-		if line == "" {
+	for index := range lines {
+		if lines[index] == "" {
 			continue
 		}
 
 		var outage Outage
-		err := json.Unmarshal([]byte(line), &outage)
+		err := json.Unmarshal([]byte(lines[index]), &outage)
 		if err != nil {
 			logger.Errorf("Failed to unmarshal outage: [%v]", err)
 			return err
@@ -227,6 +260,8 @@ func (h *CStateHook) loadState() error {
 
 		outages = append(outages, outage)
 	}
+
+	h.outages = outages
 
 	logger.Infof("Loaded cstate state from file: [%s]", content)
 	return nil
@@ -236,6 +271,51 @@ func (h *CStateHook) loadState() error {
 // set to "uptimer: update status" and the author is set to the configured commit name
 // and email.
 func (h *CStateHook) commit(file string, content string) error {
+	// Check if the file exists
+	getOpts := &github.RepositoryContentGetOptions{
+		Ref: h.repo.Branch,
+	}
+
+	fileContent, _, _, err := h.github.Repositories.GetContents(context.Background(), h.repo.Owner, h.repo.Name, file, getOpts)
+	if err != nil {
+		var errorResponse *github.ErrorResponse
+		if errors.As(err, &errorResponse) && errorResponse.Response.StatusCode == 404 {
+			// File does not exist, create it
+			return h.createFile(file, content)
+		}
+		logger.Errorf("Failed to get file content: [%v]", err)
+		return err
+	}
+
+	// Only update the file if the content is different
+	existingContent, err := fileContent.GetContent()
+	if err != nil {
+		logger.Errorf("Failed to get file content: [%v]", err)
+	}
+
+	if existingContent == content {
+		logger.Infof("File content is the same, no need to update: [%s]", file)
+		return nil
+	}
+
+	return h.updateFile(file, content)
+}
+
+func (h *CStateHook) createFile(file string, content string) error {
+	createOpts := &github.RepositoryContentFileOptions{
+		Message: github.Ptr(commitMessage),
+		Content: []byte(content),
+		Branch:  github.Ptr(h.repo.Branch),
+	}
+	_, _, err := h.github.Repositories.CreateFile(context.Background(), h.repo.Owner, h.repo.Name, file, createOpts)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (h *CStateHook) updateFile(file string, content string) error {
 	// Get the SHA of the file to update
 	getOpts := &github.RepositoryContentGetOptions{
 		Ref: h.repo.Branch,
@@ -254,7 +334,6 @@ func (h *CStateHook) commit(file string, content string) error {
 		return err
 	}
 
-	// Now we can update the file with the new content
 	updateOpts := &github.RepositoryContentFileOptions{
 		Message: github.Ptr(commitMessage),
 		Content: []byte(content),
@@ -270,12 +349,13 @@ func (h *CStateHook) commit(file string, content string) error {
 }
 
 type OutageHost struct {
-	Host        string           `json:"host"`
-	Description string           `json:"description"`
-	Severity    seeking.Severity `json:"severity"`
+	Host        string       `json:"host"`
+	Description string       `json:"description"`
+	Severity    dto.Severity `json:"severity"`
 }
 
 type Outage struct {
+	Filename    string              `json:"filename"`
 	AppGroup    string              `json:"app_group"`
 	Hosts       []OutageHost        `json:"hosts"`
 	YamlContent OutageYamlFile      `json:"yaml_content"`
@@ -291,8 +371,17 @@ type OutageImpl interface {
 }
 
 func (o *Outage) RelatedToOutage(appGroups []string) bool {
-	for _, appGroup := range appGroups {
-		if o.AppGroup == appGroup {
+	for index := range appGroups {
+		if o.AppGroup == appGroups[index] {
+			return true
+		}
+	}
+	return false
+}
+
+func (o *Outage) HostExists(host OutageHost) bool {
+	for index := range o.Hosts {
+		if o.Hosts[index].Host == host.Host {
 			return true
 		}
 	}
@@ -305,7 +394,7 @@ func (o *Outage) AddHost(host OutageHost) {
 		HistoryType: Investigating,
 		Description: "An additional sub-service related to the application group is experiencing issues. We are continuing to investigate the situation.",
 	})
-	o.YamlContent.severity = o.GetHighestSeverity()
+	o.YamlContent.Severity = o.GetHighestSeverity()
 }
 
 func (o *Outage) RemoveHost(host OutageHost) {
@@ -319,8 +408,8 @@ func (o *Outage) RemoveHost(host OutageHost) {
 
 			// If the host is not in the outage anymore, we need to update the status and resolve the outage
 			if len(o.Hosts) == 0 {
-				o.YamlContent.resolved = true
-				o.YamlContent.resolvedWhen = time.Now().UTC().Format(time.RFC3339)
+				o.YamlContent.Resolved = true
+				o.YamlContent.ResolvedWhen = time.Now().UTC().Format(time.RFC3339)
 				o.History = append(o.History, OutageHistoryFile{
 					HistoryType: Resolved,
 					Description: "We can now confirm that all services related to the service are back online. The outage is now considered resolved.",
@@ -330,14 +419,14 @@ func (o *Outage) RemoveHost(host OutageHost) {
 			break
 		}
 	}
-	o.YamlContent.severity = o.GetHighestSeverity()
+	o.YamlContent.Severity = o.GetHighestSeverity()
 }
 
 func (o *Outage) GetHighestSeverity() string {
-	highestSeverity := seeking.Minor
-	for _, host := range o.Hosts {
-		if int(host.Severity) > int(highestSeverity) {
-			highestSeverity = host.Severity
+	highestSeverity := dto.Minor
+	for index := range o.Hosts {
+		if int(o.Hosts[index].Severity) > int(highestSeverity) {
+			highestSeverity = o.Hosts[index].Severity
 		}
 	}
 	return highestSeverity.String()
@@ -353,8 +442,8 @@ func (o *Outage) FormatOutageFile() string {
 
 	// Format the history. We take each entrie and append it at the end
 	historyContent := new(strings.Builder)
-	for _, history := range o.History {
-		historyContent.WriteString("**" + string(history.HistoryType) + "**" + ": " + history.Description + "\n")
+	for index := range o.History {
+		historyContent.WriteString("**" + string(o.History[index].HistoryType) + "**" + " - " + o.History[index].Description + "\n")
 	}
 
 	// Format the outage file
