@@ -1,15 +1,14 @@
-package internal
+package seeking
 
 import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
+	dto "github.com/prometheus/client_model/go"
 	"github.com/stretchr/testify/assert"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 	"time"
-
-	dto "github.com/prometheus/client_model/go"
 )
 
 func setupSeeker(server *httptest.Server) *SeekerImpl {
