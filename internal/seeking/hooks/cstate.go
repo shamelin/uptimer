@@ -212,7 +212,7 @@ func (h *CStateHook) updateOutageFile(outage Outage) {
 	outageFile := outage.FormatOutageFile()
 
 	// Update the file in the repository
-	err := h.commit(outage.Filename, outageFile, stateCommitMessage, true)
+	err := h.commit(outage.Filename, outageFile, statusCommitMessage, false)
 	if err != nil {
 		logger.Errorf("Failed to commit file: [%v]", err)
 		return
@@ -237,7 +237,7 @@ func (h *CStateHook) dumpState() error {
 	}
 
 	// Write the file content to the `.uptimer.state` file in the root of the repository.
-	err := h.commit(".uptimer.state", fileContent.String(), statusCommitMessage, false)
+	err := h.commit(".uptimer.state", fileContent.String(), stateCommitMessage, true)
 	if err != nil {
 		logger.Errorf("Failed to commit file: [%v]", err)
 		return err
