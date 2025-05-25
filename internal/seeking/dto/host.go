@@ -10,26 +10,26 @@ type Severity int64
 // String returns the string representation of the Severity.
 func (sev Severity) String() string {
 	switch sev {
-	case Critical:
-		return "Critical"
-	case Major:
-		return "Major"
-	case Minor:
-		return "Minor"
+	case Down:
+		return "down"
+	case Disrupted:
+		return "disrupted"
+	case Notice:
+		return "notice"
 	default:
-		return "Unknown"
+		return "unknown"
 	}
 }
 
 // ParseSeverity parses a string and returns the corresponding Severity.
 func ParseSeverity(sev string) (Severity, error) {
 	switch strings.ToLower(sev) {
-	case "critical":
-		return Critical, nil
-	case "major":
-		return Major, nil
-	case "minor":
-		return Minor, nil
+	case "down":
+		return Down, nil
+	case "disrupted":
+		return Disrupted, nil
+	case "notice":
+		return Notice, nil
 	default:
 		return -1, fmt.Errorf("invalid severity: [%s]", sev)
 	}
@@ -37,9 +37,9 @@ func ParseSeverity(sev string) (Severity, error) {
 
 // Severity levels for the host status
 const (
-	Critical Severity = iota
-	Major    Severity = iota
-	Minor    Severity = iota
+	Down      Severity = iota
+	Disrupted Severity = iota
+	Notice    Severity = iota
 )
 
 type Host struct {

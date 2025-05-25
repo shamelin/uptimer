@@ -8,6 +8,8 @@ import (
 	"github.com/urfave/cli/v2"
 	"net/url"
 	"os"
+	"sort"
+	"time"
 	"uptimer/internal/seeking"
 	"uptimer/internal/seeking/dto"
 	"uptimer/internal/seeking/hooks"
@@ -164,9 +166,12 @@ func parseHostsFromCongFile(logger *log.Entry, ctx *cli.Context) []dto.Host {
 
 		severity, err := dto.ParseSeverity(viper.GetString(prefix + ".severity"))
 		if err != nil {
-			logger.WithError(err).Warnf("Failed to parse severity [%s] for host [%s]. Defaulting to Minor", viper.GetString(prefix+".severity"), hostname)
-			severity = dto.Minor
+			logger.WithError(err).Warnf("Failed to parse severity [%s] for host [%s]. Defaulting to Disrupted", viper.GetString(prefix+".severity"), hostname)
+			severity = dto.Disrupted
 		}
+
+		appGroups := viper.GetStringSlice(prefix + ".app-group")
+		sort.Strings(appGroups)
 
 		output = append(output, dto.Host{
 			Host:              u.String(),
@@ -174,7 +179,7 @@ func parseHostsFromCongFile(logger *log.Entry, ctx *cli.Context) []dto.Host {
 			Interval:          viper.GetInt(prefix + ".interval"),
 			Headers:           headers,
 			Hooks:             viper.GetStringSlice(prefix + ".hooks"),
-			AppGroup:          viper.GetStringSlice(prefix + ".app-group"),
+			AppGroup:          appGroups,
 			Severity:          severity,
 			OutageDescription: viper.GetString(prefix + ".outage-description"),
 		})
@@ -218,7 +223,13 @@ func loadHooks(targetHooks []string) map[string]hooks.HookHandler {
 				CommitEmail: viper.GetString("cstate.repo.commit.email"),
 			}
 
-			output["cstate"] = hooks.NewCStateHook(os.Getenv("GITHUB_TOKEN"), repo)
+			deploymentInterval, err := time.ParseDuration(viper.GetString("cstate.deployment-interval"))
+			if err != nil {
+				log.WithError(err).Error("Failed to parse deployment interval. Defaulting to 24h")
+				deploymentInterval = 24 * time.Hour
+			}
+
+			output["cstate"] = hooks.NewCStateHook(os.Getenv("GITHUB_TOKEN"), repo, deploymentInterval)
 		default:
 			log.Warnf("Unknown hook [%s] requested. Skipping.", targetHook)
 		}
