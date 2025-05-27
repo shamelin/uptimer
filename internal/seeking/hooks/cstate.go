@@ -8,6 +8,7 @@ import (
 	"gopkg.in/yaml.v3"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 	"uptimer/internal/seeking/dto"
 )
@@ -36,6 +37,7 @@ type OutageYamlFile struct {
 }
 
 type OutageHistoryFile struct {
+	Time        time.Time
 	HistoryType HistoryType
 	Description string
 }
@@ -53,7 +55,10 @@ type CStateHook struct {
 	github             *github.Client
 	repo               Repository
 	outages            []Outage
+	outagesMutex       sync.Mutex // Mutex to protect the outages slice
 	downMapping        map[string]int
+	downMappingMutex   sync.Mutex // Mutex to protect the downMapping map
+	needsStateDump     bool
 }
 
 func NewCStateHook(githubToken string, repo Repository) *CStateHook {
@@ -66,10 +71,13 @@ func NewCStateHook(githubToken string, repo Repository) *CStateHook {
 	}
 
 	cstateHook := &CStateHook{
-		github:      githubClient,
-		repo:        repo,
-		outages:     make([]Outage, 0),
-		downMapping: make(map[string]int),
+		github:           githubClient,
+		repo:             repo,
+		outages:          make([]Outage, 0),
+		outagesMutex:     sync.Mutex{},
+		downMapping:      make(map[string]int),
+		downMappingMutex: sync.Mutex{},
+		needsStateDump:   false,
 	}
 	// Load the state from the file if it exists
 	err = cstateHook.loadState()
@@ -91,7 +99,7 @@ func (h *CStateHook) ensureOutages(affectedAppGroups []string) {
 	// set the filename to the current date and time
 	fileName := new(strings.Builder)
 	fileName.WriteString("content/issues/")
-	fileName.WriteString(time.Now().UTC().Format("2006-01-02-150405"))
+	fileName.WriteString(time.Now().Format("2006-01-02-150405"))
 	fileName.WriteString("-")
 	for index := range affectedAppGroups {
 		fileName.WriteString(affectedAppGroups[index])
@@ -103,16 +111,18 @@ func (h *CStateHook) ensureOutages(affectedAppGroups []string) {
 
 	// create initial outage message
 	outageHistory := OutageHistoryFile{
+		Time:        time.Now(),
 		HistoryType: Investigating,
 		Description: "An issue has been detected with one or more service. We are currently investigating the situation and will provide updates when possible.",
 	}
 
-	currentDate := time.Now().UTC()
+	currentDate := time.Now()
 	title := "Outage related to " + strconv.Itoa(len(affectedAppGroups)) + " service"
 	if len(affectedAppGroups) > 1 {
 		title += "s"
 	}
 	outage := Outage{
+		mu:        sync.Mutex{},
 		Filename:  fileName.String(),
 		AppGroups: affectedAppGroups,
 		Hosts:     make([]OutageHost, 0),
@@ -126,7 +136,11 @@ func (h *CStateHook) ensureOutages(affectedAppGroups []string) {
 			outageHistory,
 		},
 	}
+
+	h.outagesMutex.Lock()
 	h.outages = append(h.outages, outage)
+	h.needsStateDump = true
+	h.outagesMutex.Unlock()
 }
 
 func (h *CStateHook) Handle(result SeekResult) error {
@@ -144,14 +158,20 @@ func (h *CStateHook) Handle(result SeekResult) error {
 // handleOnline is called when the host is online. It updates the online status and
 // dumps the state to the file if the status has changed.
 func (h *CStateHook) handleOnline(result SeekResult) error {
+	h.downMappingMutex.Lock()
 	delete(h.downMapping, result.Host.Host)
+	h.downMappingMutex.Unlock()
 
 	for i := range h.outages {
-		h.outages[i].RemoveHost(OutageHost{
+		found := h.outages[i].RemoveHost(OutageHost{
 			Host:        result.Host.Host,
 			Description: result.Host.OutageDescription,
 			Severity:    result.Host.Severity,
 		})
+
+		if found {
+			h.needsStateDump = true
+		}
 	}
 
 	return h.reprocessOutages()
@@ -160,17 +180,21 @@ func (h *CStateHook) handleOnline(result SeekResult) error {
 // handleOffline is called when the host is offline. It updates the online status and
 // dumps the state to the file if the status has changed.
 func (h *CStateHook) handleOffline(result SeekResult) error {
+	h.downMappingMutex.Lock()
 	if _, ok := h.downMapping[result.Host.Host]; !ok {
 		// If the host is not in the mapping, we need to create a new outage
 		h.downMapping[result.Host.Host] = 1
+		h.downMappingMutex.Unlock()
 		return nil
 	} else {
 		// If the host is already in the mapping, we increment the count
 		h.downMapping[result.Host.Host]++
 		if h.downMapping[result.Host.Host] < result.Host.OutageDownThreshold {
+			h.downMappingMutex.Unlock()
 			return nil
 		}
 	}
+	h.downMappingMutex.Unlock()
 
 	outageHost := OutageHost{
 		Host:        result.Host.Host,
@@ -184,6 +208,10 @@ func (h *CStateHook) handleOffline(result SeekResult) error {
 		// Check if the outage app group matches one of the application groups
 		if outage.RelatedToOutage(result.Host.AppGroup) && !outage.HostExists(outageHost) {
 			outage.AddHost(outageHost)
+
+			h.outagesMutex.Lock()
+			h.needsStateDump = true
+			h.outagesMutex.Unlock()
 		}
 	}
 
@@ -192,12 +220,13 @@ func (h *CStateHook) handleOffline(result SeekResult) error {
 
 // Reprocesses the active outages and resolves them if all hosts are online.
 func (h *CStateHook) reprocessOutages() error {
+	h.outagesMutex.Lock()
 	resolvedOutages := make([]int, 0)
 	for index := range h.outages {
 		backOnline := len(h.outages[index].Hosts) == 0
 
 		// Update the outage status in the repository
-		h.updateOutageFile(h.outages[index])
+		h.updateOutageFile(&h.outages[index])
 
 		if backOnline {
 			resolvedOutages = append(resolvedOutages, index)
@@ -209,6 +238,7 @@ func (h *CStateHook) reprocessOutages() error {
 		index := resolvedOutages[i]
 		h.outages = append(h.outages[:index], h.outages[index+1:]...)
 	}
+	h.outagesMutex.Unlock()
 
 	// Dump the state to the file
 	err := h.dumpState()
@@ -221,7 +251,7 @@ func (h *CStateHook) reprocessOutages() error {
 }
 
 // updateOutageFile updates the file of the outage and sets it as resolved.
-func (h *CStateHook) updateOutageFile(outage Outage) {
+func (h *CStateHook) updateOutageFile(outage *Outage) {
 	outageFile := outage.FormatOutageFile()
 
 	// Update the file in the repository
@@ -236,13 +266,19 @@ func (h *CStateHook) updateOutageFile(outage Outage) {
 // the repository. This allows the application to pick up the state after a restart of the
 // service.
 func (h *CStateHook) dumpState() error {
+	if !h.needsStateDump {
+		return nil
+	}
+
 	// Output each value in the "online" variable with a mapping key=value.
 	fileContent := new(strings.Builder)
 
+	h.outagesMutex.Lock()
 	for index := range h.outages {
 		encodedOutage, err := json.Marshal(h.outages[index])
 		if err != nil {
 			logger.Errorf("Failed to marshal outage: %v", err)
+			h.outagesMutex.Unlock()
 			return err
 		}
 
@@ -255,6 +291,8 @@ func (h *CStateHook) dumpState() error {
 		logger.Errorf("Failed to commit file: [%v]", err)
 		return err
 	}
+	h.needsStateDump = false
+	h.outagesMutex.Unlock()
 
 	return nil
 }
@@ -290,11 +328,15 @@ func (h *CStateHook) loadState() error {
 			logger.Errorf("Failed to unmarshal outage: [%v]", err)
 			return err
 		}
+		// reset the mutex for the outage
+		outage.mu = sync.Mutex{}
 
 		outages = append(outages, outage)
 	}
 
+	h.outagesMutex.Lock()
 	h.outages = outages
+	h.outagesMutex.Unlock()
 
 	logger.Infof("Loaded cstate state from file: [%s]", content)
 	return nil
@@ -392,6 +434,7 @@ type OutageHost struct {
 }
 
 type Outage struct {
+	mu          sync.Mutex          // Mutex to protect the outage data
 	Filename    string              `json:"filename"`
 	AppGroups   []string            `json:"app_groups"`
 	Hosts       []OutageHost        `json:"hosts"`
@@ -439,36 +482,45 @@ func (o *Outage) getCurrentlyAffectedMessage() string {
 	description.WriteString(strconv.Itoa(len(o.Hosts)))
 	description.WriteByte(' ')
 	if len(o.Hosts) == 1 {
-		description.WriteString("sub-service is currently affected by this outage.")
+		description.WriteString("service is currently affected by this outage.")
 	} else {
-		description.WriteString("sub-services are currently affected by this outage.")
+		description.WriteString("services are currently affected by this outage.")
 	}
 
 	return description.String()
 }
 
 func (o *Outage) AddHost(host OutageHost) {
+	o.mu.Lock()
 	o.Hosts = append(o.Hosts, host)
 
 	description := new(strings.Builder)
 	if host.Description != "" {
 		description.WriteString("A service that " + host.Description + " is experiencing issues.")
 	} else {
-		description.WriteString("A sub-service related to the application group is experiencing issues.")
+		description.WriteString("A service related to the application group is experiencing issues.")
 	}
 	description.WriteByte(' ')
 	description.WriteString(o.getCurrentlyAffectedMessage())
 
 	o.History = append(o.History, OutageHistoryFile{
+		Time:        time.Now(),
 		HistoryType: Investigating,
 		Description: description.String(),
 	})
 	o.YamlContent.Severity = o.GetHighestSeverity()
+	o.mu.Unlock()
 }
 
-func (o *Outage) RemoveHost(host OutageHost) {
+// RemoveHost removes a host from the outage. If the host is not in the outage anymore,
+// it updates the status and resolves the outage if all hosts are back online.
+func (o *Outage) RemoveHost(host OutageHost) bool {
+	found := false
 	for i := range o.Hosts {
 		if o.Hosts[i].Host == host.Host {
+			found = true
+
+			o.mu.Lock()
 			o.Hosts = append(o.Hosts[:i], o.Hosts[i+1:]...)
 
 			description := new(strings.Builder)
@@ -476,6 +528,7 @@ func (o *Outage) RemoveHost(host OutageHost) {
 			description.WriteByte(' ')
 			description.WriteString(o.getCurrentlyAffectedMessage())
 			o.History = append(o.History, OutageHistoryFile{
+				Time:        time.Now(),
 				HistoryType: Monitoring,
 				Description: description.String(),
 			})
@@ -483,17 +536,21 @@ func (o *Outage) RemoveHost(host OutageHost) {
 			// If the host is not in the outage anymore, we need to update the status and resolve the outage
 			if len(o.Hosts) == 0 {
 				o.YamlContent.Resolved = true
-				o.YamlContent.ResolvedWhen = time.Now().UTC().Format(time.RFC3339)
+				o.YamlContent.ResolvedWhen = time.Now().Format(time.RFC3339)
 				o.History = append(o.History, OutageHistoryFile{
+					Time:        time.Now(),
 					HistoryType: Resolved,
 					Description: "We can now confirm that all services related to the service are back online. The outage is now considered resolved.",
 				})
 			}
+			o.mu.Unlock()
 
 			break
 		}
 	}
 	o.YamlContent.Severity = o.GetHighestSeverity()
+
+	return found
 }
 
 func (o *Outage) GetHighestSeverity() string {
@@ -523,7 +580,12 @@ func (o *Outage) FormatOutageFile() string {
 	// Format the history. We take each entrie and append it at the end
 	historyContent := new(strings.Builder)
 	for index := len(o.History) - 1; index >= 0; index-- {
-		historyContent.WriteString("**" + string(o.History[index].HistoryType) + "**" + " - " + o.History[index].Description + "\n\n")
+		historyContent.WriteString(o.History[index].Time.Format("15:04PM"))
+		historyContent.WriteString(" - ")
+		historyContent.WriteString("**" + string(o.History[index].HistoryType) + "**")
+		historyContent.WriteString(" - ")
+		historyContent.WriteString(o.History[index].Description)
+		historyContent.WriteString("\n\n")
 	}
 
 	// Format the outage file

@@ -8,6 +8,7 @@ import (
 	"github.com/urfave/cli/v2"
 	"net/url"
 	"os"
+	"slices"
 	"sort"
 	"uptimer/internal/seeking"
 	"uptimer/internal/seeking/dto"
@@ -73,6 +74,8 @@ func Application(ctx *cli.Context) error {
 	for _, host := range hosts {
 		neededHooks = append(neededHooks, host.Hooks...)
 	}
+	// remove duplicates
+	neededHooks = slices.Compact(neededHooks)
 
 	availableHooks := loadHooks(neededHooks)
 	for _, host := range hosts {
