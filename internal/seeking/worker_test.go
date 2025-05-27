@@ -1,23 +1,24 @@
-package internal
+package seeking
 
 import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
+	promclient "github.com/prometheus/client_model/go"
 	"github.com/stretchr/testify/assert"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 	"time"
-
-	dto "github.com/prometheus/client_model/go"
+	"uptimer/internal/seeking/dto"
 )
 
 func setupSeeker(server *httptest.Server) *SeekerImpl {
 	registerer := prometheus.NewRegistry()
 	seeker, err := NewSeeker(
-		Host{
+		dto.Host{
 			Host: server.URL,
 		},
+		nil, // No hooks for this test
 		registerer,
 	)
 
@@ -125,8 +126,8 @@ func TestSeekerImplCheckUptimeWithHighLatencyExpectInHistogram(t *testing.T) {
 	}
 
 	// Gather the metrics and inspect the gauge values
-	metric := &dto.Metric{}
-	err := seeker.latency.Write(metric)
+	metric := promclient.Metric{}
+	err := seeker.latency.Write(&metric)
 	if err != nil {
 		t.Fatalf("Failed to write gauge metric: %v", err)
 	}

@@ -7,6 +7,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/urfave/cli/v2"
 	"testing"
+	"uptimer/internal/seeking/dto"
 )
 
 var logger = log.WithFields(log.Fields{
@@ -82,13 +83,14 @@ func TestParseHostsFromConfigWithSingleHostWithParameters(t *testing.T) {
 
 	hosts := parseHostsFromCongFile(logger, ctx)
 	assert.Len(t, hosts, 1)
-	assert.Equal(t, hosts[0], Host{
+	assert.Equal(t, hosts[0], dto.Host{
 		Host:     "http://example.com",
 		Timeout:  10,
 		Interval: 10,
 		Headers: map[string]string{
 			"User-Agent": "Uptimer/1.0.0",
 		},
+		Severity: dto.Minor,
 	})
 }
 
@@ -100,13 +102,14 @@ func TestParseHostsFromConfigWithSingleHostWithoutParameters(t *testing.T) {
 
 	hosts := parseHostsFromCongFile(logger, ctx)
 	assert.Len(t, hosts, 1)
-	assert.Equal(t, hosts[0], Host{
+	assert.Equal(t, hosts[0], dto.Host{
 		Host:     "http://example.com",
 		Timeout:  5,
 		Interval: 5,
 		Headers: map[string]string{
 			"User-Agent": "/",
 		},
+		Severity: dto.Minor,
 	})
 }
 
@@ -122,21 +125,23 @@ func TestParseHostsFromConfigWithMultipleHosts(t *testing.T) {
 	hosts := parseHostsFromCongFile(logger, ctx)
 	assert.Len(t, hosts, 2)
 	// the array is not ordered
-	assert.Contains(t, hosts, Host{
+	assert.Contains(t, hosts, dto.Host{
 		Host:     "http://example.com",
 		Timeout:  10,
 		Interval: 10,
 		Headers: map[string]string{
 			"User-Agent": "/",
 		},
+		Severity: dto.Minor,
 	})
-	assert.Contains(t, hosts, Host{
+	assert.Contains(t, hosts, dto.Host{
 		Host:     "http://example.org",
 		Timeout:  5,
 		Interval: 5,
 		Headers: map[string]string{
 			"User-Agent": "/",
 		},
+		Severity: dto.Minor,
 	})
 }
 
@@ -161,12 +166,13 @@ func TestParseHostsFromConfigOverridesUserAgent(t *testing.T) {
 
 	hosts := parseHostsFromCongFile(logger, ctx)
 	assert.Len(t, hosts, 1)
-	assert.Equal(t, hosts[0], Host{
+	assert.Equal(t, hosts[0], dto.Host{
 		Host:     "http://example.com",
 		Timeout:  5,
 		Interval: 5,
 		Headers: map[string]string{
 			"User-Agent": "Custom User Agent",
 		},
+		Severity: dto.Minor,
 	})
 }

@@ -58,6 +58,13 @@ func main() {
 				Usage:   "Port on which the metrics endpoint will be exposed.",
 				Value:   8080,
 			},
+			&cli.IntFlag{
+				Name:    "outage-down-threshold",
+				Aliases: []string{"d"},
+				EnvVars: []string{"OUTAGE_DOWN_THRESHOLD"},
+				Usage:   "Number of consecutive checks that must fail before declaring an outage on the host.",
+				Value:   5,
+			},
 		},
 		Action: internal.Application,
 	}

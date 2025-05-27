@@ -1,4 +1,4 @@
-package internal
+package seeking
 
 import (
 	"context"
@@ -11,6 +11,8 @@ import (
 	"os/signal"
 	"syscall"
 	"time"
+	"uptimer/internal/seeking/dto"
+	"uptimer/internal/seeking/hooks"
 )
 
 // UptimeChecker is the interface that defines the methods to check the uptime of a remote host.
@@ -23,9 +25,9 @@ type UptimeChecker interface {
 // SeekerImpl is the implementation of the UptimeChecker interface. It is responsible for checking the uptime of a remote host.
 type SeekerImpl struct {
 	logger       *logrus.Entry
+	hooks        map[string]hooks.HookHandler
 	httpClient   *http.Client
-	host         string
-	interval     int
+	host         dto.Host
 	up           prometheus.Gauge
 	latency      prometheus.Gauge
 	statusCode   prometheus.Gauge
@@ -33,7 +35,7 @@ type SeekerImpl struct {
 }
 
 // NewSeeker creates a new SeekerImpl instance.
-func NewSeeker(host Host, registerer prometheus.Registerer) (*SeekerImpl, error) {
+func NewSeeker(host dto.Host, hooks map[string]hooks.HookHandler, registerer prometheus.Registerer) (*SeekerImpl, error) {
 	logger := logrus.WithFields(logrus.Fields{
 		"component": "seeker",
 	})
@@ -71,9 +73,9 @@ func NewSeeker(host Host, registerer prometheus.Registerer) (*SeekerImpl, error)
 
 	return &SeekerImpl{
 		logger:       logger,
+		hooks:        hooks,
 		httpClient:   httpClient,
-		host:         host.Host,
-		interval:     host.Interval,
+		host:         host,
 		up:           upCounter,
 		latency:      latency,
 		statusCode:   statusCode,
@@ -87,7 +89,7 @@ func (s *SeekerImpl) CheckUptime() {
 	s.hookSignal(cancel)
 	defer cancel()
 
-	ticker := time.NewTicker(time.Duration(s.interval) * time.Second)
+	ticker := time.NewTicker(time.Duration(s.host.Interval) * time.Second)
 	defer ticker.Stop()
 
 	for range ticker.C {
@@ -107,7 +109,7 @@ func (s *SeekerImpl) hookSignal(cancel context.CancelFunc) {
 
 	go func() {
 		<-signalChan
-		s.logger.Infof("Received signal. Stopping seeker for [%s].", s.host)
+		s.logger.Infof("Received signal. Stopping seeker for [%s].", s.host.Host)
 		cancel()
 	}()
 }
@@ -116,37 +118,58 @@ func (s *SeekerImpl) hookSignal(cancel context.CancelFunc) {
 func (s *SeekerImpl) check() {
 	start := time.Now()
 
-	s.logger.Debugf("Checking [%s]", s.host)
-	res, err := s.httpClient.Get(s.host)
+	host := s.host.Host
+	s.logger.Debugf("Checking [%s]", host)
+	res, err := s.httpClient.Get(host)
+	seekResult := hooks.SeekResult{
+		Host:         s.host,
+		ResponseTime: time.Since(start),
+	}
 	if err != nil {
-		s.logger.Debugf("Got error [%v] for [%s]. Counting as down.", err, s.host)
+		seekResult.Online = false
+
+		s.logger.Debugf("Got error [%v] for [%s]. Counting as down.", err, host)
 		s.up.Set(0)
 		if s.previouslyUp {
-			s.logger.Warnf("Host [%s] is down.", s.host)
+			s.logger.Warnf("Host [%s] is down.", host)
 		}
 		s.previouslyUp = false
+	} else {
+		seekResult.Online = true
+		seekResult.StatusCode = res.StatusCode
+	}
 
+	// call hooks
+	for _, hook := range s.host.Hooks {
+		if handler, ok := s.hooks[hook]; ok {
+			if err := handler.Handle(seekResult); err != nil {
+				s.logger.Errorf("Failed to handle hook [%s]: %v", hook, err)
+			}
+		}
+	}
+
+	if !seekResult.Online {
 		return
 	}
 
 	// if the status code is not in the 2xx range, we consider the host as down
-	s.statusCode.Set(float64(res.StatusCode))
-	if res.StatusCode < 200 || res.StatusCode > 299 {
-		s.logger.Warnf("Got status code [%d] for [%s]. Counting as down.", res.StatusCode, s.host)
+	s.statusCode.Set(float64(seekResult.StatusCode))
+	if seekResult.StatusCode < 200 || seekResult.StatusCode > 299 {
+		s.logger.Warnf("Got status code [%d] for [%s]. Counting as down.", seekResult.StatusCode, host)
 		s.up.Set(0)
 		if s.previouslyUp {
-			s.logger.Warnf("Host [%s] is down.", s.host)
+			s.logger.Warnf("Host [%s] is down.", host)
 		}
 		s.previouslyUp = false
 		return
 	}
 
-	s.logger.Debugf("Got status code [%d] for [%s]. Counting as up.", res.StatusCode, s.host)
+	s.logger.Debugf("Got status code [%d] for [%s]. Counting as up.", res.StatusCode, host)
 	s.up.Set(1)
-	s.latency.Set(float64(time.Since(start).Milliseconds()))
+	s.latency.Set(float64(seekResult.ResponseTime.Milliseconds()))
 
 	if !s.previouslyUp {
-		s.logger.Infof("Host [%s] is online.", s.host)
+		s.logger.Infof("Host [%s] is online.", host)
 	}
 	s.previouslyUp = true
 
