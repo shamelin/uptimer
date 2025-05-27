@@ -9,7 +9,6 @@ import (
 	"net/url"
 	"os"
 	"sort"
-	"time"
 	"uptimer/internal/seeking"
 	"uptimer/internal/seeking/dto"
 	"uptimer/internal/seeking/hooks"
@@ -148,6 +147,7 @@ func parseHostsFromCongFile(logger *log.Entry, ctx *cli.Context) []dto.Host {
 		// set default values
 		viper.SetDefault(prefix+".timeout", ctx.Int("timeout"))
 		viper.SetDefault(prefix+".interval", ctx.Int("interval"))
+		viper.SetDefault(prefix+".outage-down-threshold", ctx.Int("outage-down-threshold"))
 		viper.SetDefault(prefix+".headers", map[string]string{})
 
 		logger.Debugf("Found potential host [%s] in configuration file", hostname)
@@ -166,22 +166,23 @@ func parseHostsFromCongFile(logger *log.Entry, ctx *cli.Context) []dto.Host {
 
 		severity, err := dto.ParseSeverity(viper.GetString(prefix + ".severity"))
 		if err != nil {
-			logger.WithError(err).Warnf("Failed to parse severity [%s] for host [%s]. Defaulting to Disrupted", viper.GetString(prefix+".severity"), hostname)
-			severity = dto.Disrupted
+			logger.WithError(err).Warnf("Failed to parse severity [%s] for host [%s]. Defaulting to Minor", viper.GetString(prefix+".severity"), hostname)
+			severity = dto.Minor
 		}
 
 		appGroups := viper.GetStringSlice(prefix + ".app-group")
 		sort.Strings(appGroups)
 
 		output = append(output, dto.Host{
-			Host:              u.String(),
-			Timeout:           viper.GetInt(prefix + ".timeout"),
-			Interval:          viper.GetInt(prefix + ".interval"),
-			Headers:           headers,
-			Hooks:             viper.GetStringSlice(prefix + ".hooks"),
-			AppGroup:          appGroups,
-			Severity:          severity,
-			OutageDescription: viper.GetString(prefix + ".outage-description"),
+			Host:                u.String(),
+			Timeout:             viper.GetInt(prefix + ".timeout"),
+			Interval:            viper.GetInt(prefix + ".interval"),
+			Headers:             headers,
+			Hooks:               viper.GetStringSlice(prefix + ".hooks"),
+			AppGroup:            appGroups,
+			Severity:            severity,
+			OutageDescription:   viper.GetString(prefix + ".outage-description"),
+			OutageDownThreshold: viper.GetInt(prefix + ".outage-down-threshold"),
 		})
 	}
 
@@ -223,13 +224,7 @@ func loadHooks(targetHooks []string) map[string]hooks.HookHandler {
 				CommitEmail: viper.GetString("cstate.repo.commit.email"),
 			}
 
-			deploymentInterval, err := time.ParseDuration(viper.GetString("cstate.deployment-interval"))
-			if err != nil {
-				log.WithError(err).Error("Failed to parse deployment interval. Defaulting to 24h")
-				deploymentInterval = 24 * time.Hour
-			}
-
-			output["cstate"] = hooks.NewCStateHook(os.Getenv("GITHUB_TOKEN"), repo, deploymentInterval)
+			output["cstate"] = hooks.NewCStateHook(os.Getenv("GITHUB_TOKEN"), repo)
 		default:
 			log.Warnf("Unknown hook [%s] requested. Skipping.", targetHook)
 		}
