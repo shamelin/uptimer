@@ -90,6 +90,7 @@ func TestParseHostsFromConfigWithSingleHostWithParameters(t *testing.T) {
 		Headers: map[string]string{
 			"User-Agent": "Uptimer/1.0.0",
 		},
+		Severity: dto.Minor,
 	})
 }
 
@@ -108,6 +109,7 @@ func TestParseHostsFromConfigWithSingleHostWithoutParameters(t *testing.T) {
 		Headers: map[string]string{
 			"User-Agent": "/",
 		},
+		Severity: dto.Minor,
 	})
 }
 
@@ -130,6 +132,7 @@ func TestParseHostsFromConfigWithMultipleHosts(t *testing.T) {
 		Headers: map[string]string{
 			"User-Agent": "/",
 		},
+		Severity: dto.Minor,
 	})
 	assert.Contains(t, hosts, dto.Host{
 		Host:     "http://example.org",
@@ -138,6 +141,7 @@ func TestParseHostsFromConfigWithMultipleHosts(t *testing.T) {
 		Headers: map[string]string{
 			"User-Agent": "/",
 		},
+		Severity: dto.Minor,
 	})
 }
 
@@ -169,5 +173,6 @@ func TestParseHostsFromConfigOverridesUserAgent(t *testing.T) {
 		Headers: map[string]string{
 			"User-Agent": "Custom User Agent",
 		},
+		Severity: dto.Minor,
 	})
 }
