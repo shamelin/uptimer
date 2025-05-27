@@ -48,7 +48,7 @@ const (
 type Host struct {
 	// Host is the URL of the host to be monitored.
 	Host string
-	// Host is the URL of the host to be monitored.
+	// Timeout is the time in seconds to wait for a response before considering the host down.
 	Timeout int
 	// Interval is the time in seconds between each check.
 	Interval int
