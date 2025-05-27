@@ -155,7 +155,7 @@ func (s *SeekerImpl) check() {
 	// if the status code is not in the 2xx range, we consider the host as down
 	s.statusCode.Set(float64(seekResult.StatusCode))
 	if seekResult.StatusCode < 200 || seekResult.StatusCode > 299 {
-		s.logger.Warnf("Got status code [%d] for [%s]. Counting as down.", res.StatusCode, host)
+		s.logger.Warnf("Got status code [%d] for [%s]. Counting as down.", seekResult.StatusCode, host)
 		s.up.Set(0)
 		if s.previouslyUp {
 			s.logger.Warnf("Host [%s] is down.", host)
