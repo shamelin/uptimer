@@ -75,6 +75,7 @@ func Application(ctx *cli.Context) error {
 		neededHooks = append(neededHooks, host.Hooks...)
 	}
 	// remove duplicates
+	sort.Strings(neededHooks)
 	neededHooks = slices.Compact(neededHooks)
 
 	availableHooks := loadHooks(neededHooks)
